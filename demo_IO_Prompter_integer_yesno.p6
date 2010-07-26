@@ -5,6 +5,7 @@ use IO::Prompter;
 
 loop {
     my $name    = prompt("Name:")            // last;
+
     my $age     = prompt("Age:", :integer, :must({'be positive'=>*>0}) )
                                              // last;
     my $married = prompt("Married?", :yesno) // last;

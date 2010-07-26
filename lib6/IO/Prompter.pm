@@ -15,28 +15,28 @@ class IO::Prompter::Result {
 module IO::Prompter;
 
 # Utility regexes...
-regex null    { <before .?> }   # [TODO: Remove when Rakudo implements this]
-regex sign    { <[+\-]>     }
-regex digits  {  \d+:       }
-regex number  { <sign>? <digits> [\.<digits>?]? [<[eE]><sign>?<digits>]? }
-regex integer { <sign>? <digits>        }
-regex yes     { :i ^ \h* [ y | yes ]    }
-regex Yes     { :i <-[y]>               }
-regex yesno   { :i [ y | yes | n | no ] }
-regex YesNo   {    [ Y | Yes | N | No ] }
+my regex null    { <before .?> }   # [TODO: Remove when Rakudo implements this]
+my regex sign    { <[+\-]>     }
+my regex digits  {  \d+:       }
+my regex number  { <&sign>? <&digits> [\.<&digits>?]? [<[eE]><&sign>?<&digits>]? }
+my regex integer { <&sign>? <&digits>        }
+my regex yes     { :i ^ \h* [ y | yes ]    }
+my regex Yes     { :i <-[y]>               }
+my regex yesno   { :i [ y | yes | n | no ] }
+my regex YesNo   {    [ Y | Yes | N | No ] }
 
 # Table of information for building prompters for various types...
 my %constraint =
 #    Prompter   Add to  What to print on  Use this to check that   Conversion
 #      type     prompt  invalid input     input is valid           function
 #    ========   ======  ================  ======================   ==========
-      ::Int  => [': ', 'a valid integer', /^ \h* <integer> \h* $/, *.Int      ],
-      ::Num  => [': ', 'a valid number',  /^ \h* <number>  \h* $/,   +*       ],
-      ::Bool => ['? ', '"yes" or "no"',   /^ \h* <yesno>   \h* $/, {?/<yes>/} ],
-    SemiBool => ['? ', '"yes" or "no"',   /^ \h* \S+       \h* $/, {?/<yes>/} ],
- CapSemiBool => ['? ', '"Yes" for yes',   /^ \h* <Yes>     \h* $/, {?/<yes>/} ],
- CapFullBool => ['? ', '"Yes" or "No"',   /^ \h* <YesNo>   \h* $/, {?/<yes>/} ],
-         Any => [': ', 'anything',        /      <null>         /, { $^self } ];
+      Int  => [': ', 'a valid integer', /^ \h* <&integer> \h* $/, *.Int      ],
+      Num  => [': ', 'a valid number',  /^ \h* <&number>  \h* $/,   +*       ],
+      Bool => ['? ', '"yes" or "no"',   /^ \h* <&yesno>   \h* $/, {?($^self ~~ /<&yes>/)} ],
+    SemiBool => ['? ', '"yes" or "no"',   /^ \h* \S+       \h* $/, {?($^self ~~ /<&yes>/)} ],
+ CapSemiBool => ['? ', '"Yes" for yes',   /^ \h* <&Yes>     \h* $/, {?($^self ~~ /<&yes>/)} ],
+ CapFullBool => ['? ', '"Yes" or "No"',   /^ \h* <&YesNo>   \h* $/, {?($^self ~~ /<&yes>/)} ],
+         Any => [': ', 'anything',        /      <&null>         /, { $^self } ];
 
 # This sub ensures a value matches the specified set of constraints...
 sub invalid_input ($input, @constraints) {
@@ -48,21 +48,21 @@ sub invalid_input ($input, @constraints) {
     return;
 }
 
-constant $NULL_DEFAULT = Mu;
+our $NULL_DEFAULT = Any;
 
 # This sub takes type info and provides a prompter that accepts only that type
 # [TODO: Prompters are stateless, so this sub should be 'is cached'
 #        when that's available]...
 sub build_prompter_for (Mu $type, :$in = $*IN, :$out = $*OUT, *%build_opt) {
-
     # Grab the correct info out of the table...
+	my $constraints = %constraint{$type.perl} // %constraint<Any>;
     my ($punct, $description, $match, $extractor)
-        = %constraint{$type} // %constraint<Any>;
+        = $constraints.flat;
 
     # Create single hash of input constraints...
-    my @input_constraints = 
+    my @input_constraints =
         "be $description" => $match,
-        # [TODO: The next key should be something like: 
+        # [TODO: The next key should be something like:
         #        "be %build_opt<type_constraints>.perl()"
         #        if that ever returns something useful   ]
         "be an acceptable value" => %build_opt<type_constraints>.defined
@@ -70,7 +70,9 @@ sub build_prompter_for (Mu $type, :$in = $*IN, :$out = $*OUT, *%build_opt) {
         %build_opt<must>.pairs;
 
     # Check that default supplied (via lower case option) is a valid response...
-    if %build_opt<default> !=:= $NULL_DEFAULT {
+
+
+    if %build_opt<default>.perl ne $NULL_DEFAULT.perl { # TODO: FIXME was  if %build_opt<default> !=:= $NULL_DEFAULT {
         if invalid_input(%build_opt<default>, @input_constraints) -> $problem {
             warn "prompt(): Cannot use default value {%build_opt<default>.perl} ",
                 $problem;
@@ -96,7 +98,6 @@ sub build_prompter_for (Mu $type, :$in = $*IN, :$out = $*OUT, *%build_opt) {
 
             # Convert the input to the eventual return value...
             my $retval = $extractor($input);
-
             # Check if input satisified all constraints; if not, reprompt...
             if invalid_input($input, @input_constraints) -> $problem {
                 $out.print("$prompt$problem ") if ($in & $out).t;
@@ -135,7 +136,7 @@ multi sub prompt ( &block ) is export {
                             :default($NULL_DEFAULT), :must({})
                        );
 
-        # Build a closure that uses the prompter and saves the resulting value 
+        # Build a closure that uses the prompter and saves the resulting value
         # to the appropriate positional or named argument set...
         if $param.named {
             # Convert the named parameter's key to a nice promt string...
@@ -158,7 +159,7 @@ multi sub prompt ( &block ) is export {
     }
 
     # Implement the prompt-and-execute-block loops...
-    gather loop {
+    my @no_sink = gather loop {
         # Clear your throat...
         say "";
 
@@ -176,9 +177,9 @@ multi sub prompt ( &block ) is export {
     }
 }
 
-constant $DEFAULT_PROMPT = '>';
-constant $ARGS_PROMPT = 'Enter command-line args:';
-constant $ENV_VARS = join "", map {"my \$$^NAME = %*ENV<$^NAME>;"}, %*ENV.keys;
+our $DEFAULT_PROMPT = '>';
+our $ARGS_PROMPT = 'Enter command-line args:';
+our $ENV_VARS = join "", map {"my \$$^NAME = %*ENV<$^NAME>;"}, %*ENV.keys;
 
 # This variant does the usual "single input" prompt-and-read behaviour
 # [TODO: Should provide short-forms too: :a(:argv) when Rakudo supports that]...
@@ -216,8 +217,8 @@ multi sub prompt (
             !!             $DEFAULT_PROMPT;
 
     # Clean up the prompt, adding trailing punctuation, as required...
-    $prompt.=subst(/<after \w> $/, ": ");
-    $prompt.=subst(/<after \S> $/, " ");
+    #~ $prompt.=subst(/<after \w> $/, ": "); #TODO:FIXME
+    #~ $prompt.=subst(/<after \S> $/, " "); #TODO:FIXME
     $prompt.=subst(/\n$/,"");
 
     # Determine the type of prompter to build
@@ -235,9 +236,10 @@ multi sub prompt (
                                       :$must, :$default, :$DEFAULT
                                      );
 
+	#TODO: Uncomment when we have state vars
     # Wipe first if necessary...
-    state $wiped;
-    print "\n" x 1000 if $wipe || ($wipefirst && !$wiped++);
+    #~ state $wiped;
+    #~ print "\n" x 1000 if $wipe || ($wipefirst && !$wiped++);
 
     # Use the necessary prompter...
     my $input = $prompter($prompt, :$yes, :$Yes, :$yesno, :$YesNo);
