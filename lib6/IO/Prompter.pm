@@ -159,7 +159,7 @@ multi sub prompt ( &block ) is export {
     }
 
     # Implement the prompt-and-execute-block loops...
-    my @no_sink = gather loop {
+    eager gather loop {
         # Clear your throat...
         say "";
 
